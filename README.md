@@ -75,6 +75,13 @@ python3 ai-engine.py --output-format raw --text "hello"
 python3 ai-engine.py --output-format events --text "hello"
 ```
 
+### Provider Discovery
+
+```bash
+# List all supported providers as JSON
+python3 ai-engine.py --get-provider | jq .
+```
+
 #### Event Types
 
 | Event              | Fields                                  | When                     |
@@ -93,6 +100,27 @@ python3 ai-engine.py --output-format events --text "hello"
 
 ```bash
 python3 ai-engine.py --no-stream --text "hello"
+```
+
+### Query Providers (JSON)
+
+```bash
+python3 ai-engine.py --get-provider
+```
+
+Outputs a JSON array of all supported providers:
+
+```json
+[
+  {
+    "provider": "ollama_native",
+    "litellm_name": "ollama_chat",
+    "default_endpoint": "http://192.168.10.39:11434",
+    "description": "Ollama Chat API  (/api/chat)",
+    "example": "python3 ai-engine.py --provider ollama_native --model MODEL --endpoint http://192.168.10.39:11434"
+  },
+  ...
+]
 ```
 
 ## Environment Variables

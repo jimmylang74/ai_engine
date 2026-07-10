@@ -121,6 +121,20 @@ def build_provider_table() -> str:
     return "\n".join(lines)
 
 
+def build_provider_json() -> list[dict[str, str]]:
+    """Build a JSON-serializable list of providers with example endpoints."""
+    providers = []
+    for info in PROVIDER_REGISTRY.values():
+        providers.append({
+            "provider": info.key,
+            "litellm_name": info.litellm_name,
+            "default_endpoint": info.default_endpoint,
+            "description": info.description,
+            "example": f"python3 ai-engine.py --provider {info.key} --model MODEL --endpoint {info.default_endpoint}",
+        })
+    return providers
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════════════════════════
@@ -239,6 +253,11 @@ Examples:
         help="Output style (default: %(default)s). "
         "'raw' — plain streaming text (backward compatible). "
         "'events' — NDJSON event stream (programmatic).",
+    )
+    parser.add_argument(
+        "--get-provider",
+        action="store_true",
+        help="Print supported providers as JSON and exit",
     )
 
     # Parse
@@ -589,6 +608,9 @@ def run_engine(args: argparse.Namespace) -> None:
 
 def main() -> None:
     args = parse_args()
+    if args.get_provider:
+        print(json.dumps(build_provider_json(), indent=2, ensure_ascii=False))
+        sys.exit(0)
     run_engine(args)
 
 

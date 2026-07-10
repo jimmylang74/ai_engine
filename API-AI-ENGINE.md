@@ -63,6 +63,12 @@ Agent / App
 | `--no-stream` | bool | `False` | 关闭 streaming，等完整响应再输出。 |
 | `--output-format` | str | `raw` | `raw` — 纯文本流（向后兼容）；`events` — NDJSON 事件流（程序化调用）。 |
 
+### 其他
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--get-provider` | bool | `False` | 以 JSON 格式输出支持的 provider 列表后退出。不调用 LLM。 |
+
 ---
 
 ## Provider 参考
@@ -554,6 +560,42 @@ python3 ai-engine.py \
     --api-key sk-my-key \
     --model my-custom-model \
     --text "test"
+```
+
+### 11. 查询支持的 Provider（JSON 输出）
+
+```bash
+python3 ai-engine.py --get-provider
+```
+
+输出示例：
+
+```json
+[
+  {
+    "provider": "ollama_native",
+    "litellm_name": "ollama_chat",
+    "default_endpoint": "http://192.168.10.39:11434",
+    "description": "Ollama Chat API  (/api/chat)",
+    "example": "python3 ai-engine.py --provider ollama_native --model MODEL --endpoint http://192.168.10.39:11434"
+  },
+  {
+    "provider": "openai",
+    "litellm_name": "openai",
+    "default_endpoint": "https://api.openai.com/v1",
+    "description": "OpenAI API",
+    "example": "python3 ai-engine.py --provider openai --model MODEL --endpoint https://api.openai.com/v1"
+  },
+  ...
+]
+```
+
+该命令不调用 LLM，仅返回静态 provider 列表后退出（exit code 0）。上层 Agent 可通过解析此 JSON 自动发现可用 provider 和 endpoint。
+
+```bash
+# 程序化获取 provider 列表
+providers=$(python3 ai-engine.py --get-provider)
+default_endpoint=$(echo "$providers" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['default_endpoint'])")
 ```
 
 ---
