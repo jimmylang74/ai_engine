@@ -1,4 +1,4 @@
-# ai-engine.py — LLM Middleware Engine
+# ai_engine.py — LLM Middleware Engine
 
 Stateless CLI middleware that unifies LLM providers via [LiteLLM](https://github.com/BerriAI/litellm). Supports streaming and batch responses, outputting structured NDJSON events or raw text.
 
@@ -8,13 +8,13 @@ Stateless CLI middleware that unifies LLM providers via [LiteLLM](https://github
 pip install -r requirements.txt
 
 # Streaming raw text (default)
-python3 ai-engine.py --prompt-text "You are an expert" --text "analyze this"
+python3 ai_engine.py --prompt-text "You are an expert" --text "analyze this"
 
 # NDJSON event stream (programmatic consumption)
-python3 ai-engine.py --output-format events --text "hello"
+python3 ai_engine.py --output-format events --text "hello"
 
 # Non-streaming (wait for full response)
-python3 ai-engine.py --no-stream --text "summarize this"
+python3 ai_engine.py --no-stream --text "summarize this"
 ```
 
 ## Supported Providers
@@ -39,16 +39,16 @@ Default provider: **ollama_native**
 ### Provider / Model Selection
 
 ```bash
-python3 ai-engine.py --provider openai --model gpt-4o --endpoint https://api.openai.com/v1
-python3 ai-engine.py --provider anthropic --model claude-sonnet-4-20250514 --api-key sk-...
-python3 ai-engine.py --provider ollama_native --model qwen3.5:27b
+python3 ai_engine.py --provider openai --model gpt-4o --endpoint https://api.openai.com/v1
+python3 ai_engine.py --provider anthropic --model claude-sonnet-4-20250514 --api-key sk-...
+python3 ai_engine.py --provider ollama_native --model qwen3.5:27b
 ```
 
 ### Input: System Prompt
 
 ```bash
-python3 ai-engine.py --prompt-file prompt.txt --text "user message"
-python3 ai-engine.py --prompt-text "You are a helpful assistant" --text "hello"
+python3 ai_engine.py --prompt-file prompt.txt --text "user message"
+python3 ai_engine.py --prompt-text "You are a helpful assistant" --text "hello"
 ```
 
 If neither `--prompt-file` nor `--prompt-text` is given, the engine falls back to `prompt-fine.txt` in the script directory (if it exists).
@@ -56,9 +56,9 @@ If neither `--prompt-file` nor `--prompt-text` is given, the engine falls back t
 ### Input: User Content
 
 ```bash
-python3 ai-engine.py -f data.mermaid          # read content from file
-python3 ai-engine.py --text "inline text"      # inline content
-python3 ai-engine.py                           # falls back to saved.mermaid (if it exists)
+python3 ai_engine.py -f data.mermaid          # read content from file
+python3 ai_engine.py --text "inline text"      # inline content
+python3 ai_engine.py                           # falls back to saved.mermaid (if it exists)
 ```
 
 ### Output Formats
@@ -66,20 +66,20 @@ python3 ai-engine.py                           # falls back to saved.mermaid (if
 **Raw** (default) — plain streaming text, backward compatible:
 
 ```bash
-python3 ai-engine.py --output-format raw --text "hello"
+python3 ai_engine.py --output-format raw --text "hello"
 ```
 
 **Events** — NDJSON event stream, one JSON object per line:
 
 ```bash
-python3 ai-engine.py --output-format events --text "hello"
+python3 ai_engine.py --output-format events --text "hello"
 ```
 
 ### Provider Discovery
 
 ```bash
 # List all supported providers as JSON
-python3 ai-engine.py --get-provider | jq .
+python3 ai_engine.py --get-provider | jq .
 ```
 
 #### Event Types
@@ -99,13 +99,13 @@ python3 ai-engine.py --get-provider | jq .
 ### Non-Streaming
 
 ```bash
-python3 ai-engine.py --no-stream --text "hello"
+python3 ai_engine.py --no-stream --text "hello"
 ```
 
 ### Query Providers (JSON)
 
 ```bash
-python3 ai-engine.py --get-provider
+python3 ai_engine.py --get-provider
 ```
 
 Outputs a JSON array of all supported providers:
@@ -117,7 +117,7 @@ Outputs a JSON array of all supported providers:
     "litellm_name": "ollama_chat",
     "default_endpoint": "http://192.168.10.39:11434",
     "description": "Ollama Chat API  (/api/chat)",
-    "example": "python3 ai-engine.py --provider ollama_native --model MODEL --endpoint http://192.168.10.39:11434"
+    "example": "python3 ai_engine.py --provider ollama_native --model MODEL --endpoint http://192.168.10.39:11434"
   },
   ...
 ]
@@ -134,14 +134,98 @@ Outputs a JSON array of all supported providers:
 
 Standard LiteLLM env vars are also supported (e.g. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`).
 
+## Python Import API
+
+You can import `ai_engine` as a module in other Python programs. LiteLLM is loaded lazily — only when `run_engine()` is first called.
+
+```python
+import sys
+import os
+import time
+
+sys.path.insert(0, os.path.dirname(__file__))
+
+from ai_engine import run_engine
+from argparse import Namespace
+
+messages = [
+    "What is 1+1?",
+    "What color is the sky?",
+    "Say hello in Chinese.",
+]
+
+for i, text in enumerate(messages, 1):
+    print(f"\n[{i}/{len(messages)}] Sending: {text}\n")
+
+    args = Namespace(
+        provider="ollama_native",
+        model="qwen3.5:27b",
+        endpoint="http://192.168.10.39:11434",
+        api_key=None,
+        prompt_file=None,
+        prompt_text=None,
+        file=None,
+        text=text,
+        no_stream=True,
+        output_format="raw",
+        get_provider=False,
+    )
+
+    start = time.perf_counter()
+    run_engine(args)
+    elapsed = time.perf_counter() - start
+    print(f"\n[elapsed: {elapsed:.2f}s]")
+```
+
+First call includes LiteLLM import overhead; subsequent calls skip it because Python caches modules in `sys.modules`.
+
+Full example: [example_import.py](example_import.py)
+
+## Subprocess Long-Running Mode (`--stdin`)
+
+Start a persistent `ai_engine.py` process that reads JSON requests from stdin, avoiding repeated LiteLLM import overhead:
+
+```bash
+# Start the engine in stdin mode
+python3 ai_engine.py --stdin --output-format events
+
+# Send requests via stdin (one JSON per line)
+echo '{"text":"hello","no_stream":true,"output_format":"events"}' | python3 ai_engine.py --stdin --output-format events
+```
+
+Client example:
+
+```python
+import json
+import subprocess
+import sys
+
+proc = subprocess.Popen(
+    [sys.executable, "-u", "ai_engine.py", "--stdin", "--output-format", "events"],
+    stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1,
+)
+
+request = {"text": "hello", "no_stream": True, "output_format": "events"}
+proc.stdin.write(json.dumps(request) + "\n")
+proc.stdin.flush()
+
+for line in proc.stdout:
+    event = json.loads(line)
+    print(event)
+    if event["type"] == "done":
+        break
+```
+
+Full example: [example_subprocess.py](example_subprocess.py)
+
 ## Examples
 
 ```bash
 # Analyze a Mermaid diagram with a local Ollama model
-python3 ai-engine.py --prompt-file prompt.txt -f diagram.mermaid
+python3 ai_engine.py --prompt-file prompt.txt -f diagram.mermaid
 
 # Use OpenAI with NDJSON events, piped to jq
-python3 ai-engine.py \
+python3 ai_engine.py \
   --provider openai --model gpt-4o \
   --output-format events --no-stream \
   --text "explain this code" | jq .
@@ -150,7 +234,7 @@ python3 ai-engine.py \
 export LLM_API_KEY=sk-...
 export LLM_PROVIDER=openai
 export LLM_MODEL=gpt-4o
-python3 ai-engine.py --text "hello"
+python3 ai_engine.py --text "hello"
 ```
 
 ## Requirements
@@ -163,7 +247,7 @@ python3 ai-engine.py --text "hello"
 ```
                     ┌─────────────────────┐
   prompt ──┐        │                     │
-           ├───────►│   ai-engine.py      │────► raw text (stdout)
+           ├───────►│   ai_engine.py      │────► raw text (stdout)
   content ─┘        │                     │────► NDJSON events (stdout)
                     │  ┌───────────────┐  │
                     │  │  LiteLLM      │  │

@@ -2,7 +2,7 @@
 
 ## 概述
 
-`ai-engine.py` 是 LLM 中间层引擎，上游 Agent/App 通过 CLI 参数指定 provider、model、endpoint、prompt 和请求内容，引擎调用 LiteLLM 适配不同 LLM 后端，并将响应以 **raw 文本**或 **NDJSON 事件流**两种格式输出。
+`ai_engine.py` 是 LLM 中间层引擎，上游 Agent/App 通过 CLI 参数指定 provider、model、endpoint、prompt 和请求内容，引擎调用 LiteLLM 适配不同 LLM 后端，并将响应以 **raw 文本**或 **NDJSON 事件流**两种格式输出。
 
 ### 架构角色
 
@@ -12,7 +12,7 @@ Agent / App
     │  CLI args (provider, model, endpoint, prompt, content, …)
     ▼
 ┌─────────────────┐
-│   ai-engine.py   │  ← 无状态中间层，不维护对话历史
+│   ai_engine.py   │  ← 无状态中间层，不维护对话历史
 │   (LiteLLM)      │
 └────────┬────────┘
          │
@@ -25,7 +25,7 @@ Agent / App
 
 ### 设计原则
 
-- **无状态**: `ai-engine.py` 不维护 LLM state（不管理 conversation history）。每次调用只发送单轮 messages，streaming 输出完成后即退出。
+- **无状态**: `ai_engine.py` 不维护 LLM state（不管理 conversation history）。每次调用只发送单轮 messages，streaming 输出完成后即退出。
 - **单一输出通道**: 所有输出走 stdout。调用者通过 `--output-format` 切换 raw / events 格式。
 - **错误输出**: 诊断信息、警告走 stderr；调用者可以 `2>/dev/null` 屏蔽。
 
@@ -68,6 +68,7 @@ Agent / App
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `--get-provider` | bool | `False` | 以 JSON 格式输出支持的 provider 列表后退出。不调用 LLM。 |
+| `--stdin` | bool | `False` | 从 stdin 循环读取 JSON 行请求（每行一个 JSON），逐个调用 `run_engine()`。用于长驻子进程模式，避免每次请求重新加载 LiteLLM。 |
 
 ---
 
@@ -407,7 +408,7 @@ Token 用量信息（部分模型不提供，此时不会产生该事件）。
 ### 1. 基础用法（raw 模式，默认）
 
 ```bash
-python3 ai-engine.py
+python3 ai_engine.py
 ```
 
 自动读取 `prompt-fine.txt` 作为 prompt、`saved.mermaid` 作为请求内容，调用默认 Ollama 的 `qwen3.5:27b`。
@@ -415,19 +416,19 @@ python3 ai-engine.py
 ### 2. 指定文件
 
 ```bash
-python3 ai-engine.py --prompt-file my-prompt.txt -f my-data.txt
+python3 ai_engine.py --prompt-file my-prompt.txt -f my-data.txt
 ```
 
 ### 3. 内联输入
 
 ```bash
-python3 ai-engine.py --prompt-text "你是一名网络专家" --text "分析这段日志..."
+python3 ai_engine.py --prompt-text "你是一名网络专家" --text "分析这段日志..."
 ```
 
 ### 4. 切换 provider
 
 ```bash
-python3 ai-engine.py \
+python3 ai_engine.py \
     --provider openai \
     --model gpt-4o \
     --endpoint https://api.openai.com/v1 \
@@ -437,7 +438,7 @@ python3 ai-engine.py \
 ```
 
 ```bash
-python3 ai-engine.py \
+python3 ai_engine.py \
     --provider anthropic \
     --model claude-sonnet-4-20250514 \
     --endpoint https://api.anthropic.com \
@@ -448,7 +449,7 @@ python3 ai-engine.py \
 ### 5. 非 Streaming + Events 输出（程序化调用）
 
 ```bash
-python3 ai-engine.py \
+python3 ai_engine.py \
     --no-stream \
     --output-format events \
     --prompt-text "You are a helpful assistant" \
@@ -467,7 +468,7 @@ python3 ai-engine.py \
 ### 6. Streaming + Events 输出
 
 ```bash
-python3 ai-engine.py \
+python3 ai_engine.py \
     --output-format events \
     --text "Explain quantum computing" \
     --provider ollama_native \
@@ -487,7 +488,54 @@ python3 ai-engine.py \
 {"type":"done","finish_reason":"stop"}
 ```
 
-### 7. 进程式消费（Python）
+### 7. Python Import API
+
+将 `ai_engine` 作为模块直接 import，无需 subprocess。LiteLLM 延迟加载——仅在首次调用 `run_engine()` 时导入。
+
+```python
+import sys
+import os
+import time
+
+sys.path.insert(0, os.path.dirname(__file__))
+
+from ai_engine import run_engine
+from argparse import Namespace
+
+messages = [
+    "What is 1+1?",
+    "What color is the sky?",
+    "Say hello in Chinese.",
+]
+
+for i, text in enumerate(messages, 1):
+    print(f"\n[{i}/{len(messages)}] Sending: {text}\n")
+
+    args = Namespace(
+        provider="ollama_native",
+        model="qwen3.5:27b",
+        endpoint="http://192.168.10.39:11434",
+        api_key=None,
+        prompt_file=None,
+        prompt_text=None,
+        file=None,
+        text=text,
+        no_stream=True,
+        output_format="raw",
+        get_provider=False,
+    )
+
+    start = time.perf_counter()
+    run_engine(args)
+    elapsed = time.perf_counter() - start
+    print(f"\n[elapsed: {elapsed:.2f}s]")
+```
+
+首次调用包含 LiteLLM import 开销；后续调用跳过加载（Python 在 `sys.modules` 中缓存模块）。
+
+完整示例：[example_import.py](example_import.py)
+
+### 8. 进程式消费（Python subprocess）
 
 ```python
 import json
@@ -496,7 +544,7 @@ import sys
 
 proc = subprocess.Popen(
     [
-        sys.executable, "ai-engine.py",
+        sys.executable, "ai_engine.py",
         "--output-format", "events",
         "--no-stream",
         "--prompt-text", "You are a poet",
@@ -519,10 +567,44 @@ for line in proc.stdout:
 print(f"Final result: {final_content}")
 ```
 
-### 8. bash 逐行处理 events
+### 9. Subprocess 长驻内存模式（`--stdin`）
+
+启动常驻子进程，通过 stdin 逐行接收 JSON 请求，避免每次调用重新加载 LiteLLM：
 
 ```bash
-python3 ai-engine.py --output-format events --no-stream \
+echo '{"text":"hello","no_stream":true,"output_format":"events"}' \
+  | python3 ai_engine.py --stdin --output-format events
+```
+
+Python 客户端示例：
+
+```python
+import json
+import subprocess
+import sys
+
+proc = subprocess.Popen(
+    [sys.executable, "-u", "ai_engine.py", "--stdin", "--output-format", "events"],
+    stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1,
+)
+
+request = {"text": "hello", "no_stream": True, "output_format": "events"}
+proc.stdin.write(json.dumps(request) + "\n")
+proc.stdin.flush()
+
+for line in proc.stdout:
+    event = json.loads(line)
+    print(event)
+    if event["type"] == "done":
+        break
+```
+
+完整示例：[example_subprocess.py](example_subprocess.py)
+
+### 10. bash 逐行处理 events
+
+```bash
+python3 ai_engine.py --output-format events --no-stream \
     --text "hello" | while read -r line; do
     type=$(echo "$line" | python3 -c "import sys,json; print(json.load(sys.stdin)['type'])")
     case "$type" in
@@ -537,24 +619,24 @@ python3 ai-engine.py --output-format events --no-stream \
 done
 ```
 
-### 9. 使用环境变量
+### 11. 使用环境变量
 
 ```bash
 export LLM_ENDPOINT=https://api.openai.com/v1
 export LLM_MODEL=gpt-4o
 export LLM_API_KEY=sk-xxx
-python3 ai-engine.py --text "hello"
+python3 ai_engine.py --text "hello"
 ```
 
 ```bash
 # 混合：参数优先级高于环境变量
-LLM_ENDPOINT=http://localhost:11434 python3 ai-engine.py --model llama3.2 --text "hi"
+LLM_ENDPOINT=http://localhost:11434 python3 ai_engine.py --model llama3.2 --text "hi"
 ```
 
-### 10. 自定义 OpenAI 兼容 API
+### 12. 自定义 OpenAI 兼容 API
 
 ```bash
-python3 ai-engine.py \
+python3 ai_engine.py \
     --provider custom_openai \
     --endpoint https://my-proxy.example.com/v1 \
     --api-key sk-my-key \
@@ -562,10 +644,10 @@ python3 ai-engine.py \
     --text "test"
 ```
 
-### 11. 查询支持的 Provider（JSON 输出）
+### 13. 查询支持的 Provider（JSON 输出）
 
 ```bash
-python3 ai-engine.py --get-provider
+python3 ai_engine.py --get-provider
 ```
 
 输出示例：
@@ -577,14 +659,14 @@ python3 ai-engine.py --get-provider
     "litellm_name": "ollama_chat",
     "default_endpoint": "http://192.168.10.39:11434",
     "description": "Ollama Chat API  (/api/chat)",
-    "example": "python3 ai-engine.py --provider ollama_native --model MODEL --endpoint http://192.168.10.39:11434"
+    "example": "python3 ai_engine.py --provider ollama_native --model MODEL --endpoint http://192.168.10.39:11434"
   },
   {
     "provider": "openai",
     "litellm_name": "openai",
     "default_endpoint": "https://api.openai.com/v1",
     "description": "OpenAI API",
-    "example": "python3 ai-engine.py --provider openai --model MODEL --endpoint https://api.openai.com/v1"
+    "example": "python3 ai_engine.py --provider openai --model MODEL --endpoint https://api.openai.com/v1"
   },
   ...
 ]
@@ -594,7 +676,7 @@ python3 ai-engine.py --get-provider
 
 ```bash
 # 程序化获取 provider 列表
-providers=$(python3 ai-engine.py --get-provider)
+providers=$(python3 ai_engine.py --get-provider)
 default_endpoint=$(echo "$providers" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['default_endpoint'])")
 ```
 
@@ -602,7 +684,7 @@ default_endpoint=$(echo "$providers" | python3 -c "import sys,json; print(json.l
 
 ## 与 v1 (`verify-ai-analysis.py`) 的差异
 
-| 项目 | v1 (`verify-ai-analysis.py`) | v2 (`ai-engine.py`) |
+| 项目 | v1 (`verify-ai-analysis.py`) | v2 (`ai_engine.py`) |
 |------|------------------------------|---------------------|
 | LLM 适配 | 硬编码 Ollama HTTP API | LiteLLM 适配任意 provider |
 | `--endpoint` | 默认 `http://192.168.10.39:11434/api/chat` | 默认 `http://192.168.10.39:11434`（不含路径） |
@@ -624,7 +706,7 @@ default_endpoint=$(echo "$providers" | python3 -c "import sys,json; print(json.l
 
 ### Q: 如何判断响应对应哪个请求？
 
-`ai-engine.py` 是单请求-单响应的。每个进程实例处理一个请求并退出。如果需要并发，上层启动多个子进程即可。
+`ai_engine.py` 是单请求-单响应的。每个进程实例处理一个请求并退出。如果需要并发，上层启动多个子进程即可。
 
 ### Q: 部分模型的 `reasoning_tokens` 始终为 0？
 

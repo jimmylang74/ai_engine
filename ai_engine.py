@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-ai-engine.py — LLM Middleware Engine
+ai_engine.py — LLM Middleware Engine
 
 Stateless middleware that unifies LLM providers via LiteLLM and outputs
 structured events (thinking, tool_call, assistant, usage, done) as NDJSON
 or raw streaming text.
 
 Usage:
-    python3 ai-engine.py --prompt-file prompt.txt -f data.mermaid
-    python3 ai-engine.py --prompt-text "You are an expert" --text "analyze this"
-    python3 ai-engine.py --provider openai --model gpt-4o --endpoint https://api.openai.com/v1
-    python3 ai-engine.py --output-format events --no-stream
+    python3 ai_engine.py --prompt-file prompt.txt -f data.mermaid
+    python3 ai_engine.py --prompt-text "You are an expert" --text "analyze this"
+    python3 ai_engine.py --provider openai --model gpt-4o --endpoint https://api.openai.com/v1
+    python3 ai_engine.py --output-format events --no-stream
 """
 
 from __future__ import annotations
@@ -22,8 +22,7 @@ import sys
 from dataclasses import dataclass
 from typing import Any
 
-import litellm
-# litellm types are dynamic; use Any for stream/batch response objects
+# litellm is imported lazily inside run_engine() to keep --help fast
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -130,7 +129,7 @@ def build_provider_json() -> list[dict[str, str]]:
             "litellm_name": info.litellm_name,
             "default_endpoint": info.default_endpoint,
             "description": info.description,
-            "example": f"python3 ai-engine.py --provider {info.key} --model MODEL --endpoint {info.default_endpoint}",
+            "example": f"python3 ai_engine.py --provider {info.key} --model MODEL --endpoint {info.default_endpoint}",
         })
     return providers
 
@@ -179,10 +178,10 @@ Environment variables:
   LLM_API_KEY       Override --api-key
 
 Examples:
-  python3 ai-engine.py --prompt-file prompt.txt -f data.mermaid
-  python3 ai-engine.py --prompt-text "You are an expert" --text "analyze this"
-  python3 ai-engine.py --provider openai --model gpt-4o --endpoint https://api.openai.com/v1
-  python3 ai-engine.py --output-format events --no-stream
+  python3 ai_engine.py --prompt-file prompt.txt -f data.mermaid
+  python3 ai_engine.py --prompt-text "You are an expert" --text "analyze this"
+  python3 ai_engine.py --provider openai --model gpt-4o --endpoint https://api.openai.com/v1
+  python3 ai_engine.py --output-format events --no-stream
         """,
     )
 
@@ -258,6 +257,11 @@ Examples:
         "--get-provider",
         action="store_true",
         help="Print supported providers as JSON and exit",
+    )
+    parser.add_argument(
+        "--stdin",
+        action="store_true",
+        help="Read JSON requests from stdin (one per line), run_engine for each. Used for long-running subprocess mode.",
     )
 
     # Parse
@@ -565,7 +569,8 @@ def handle_non_stream(response: Any, is_events: bool) -> None:  # litellm ModelR
 
 
 def run_engine(args: argparse.Namespace) -> None:
-    """Build messages, call LiteLLM, route to streaming or batch handler."""
+    import litellm
+
     provider_info = PROVIDER_REGISTRY[args.provider]
     litellm_model = f"{provider_info.litellm_name}/{args.model}"
     messages = build_messages(args)
@@ -611,7 +616,41 @@ def main() -> None:
     if args.get_provider:
         print(json.dumps(build_provider_json(), indent=2, ensure_ascii=False))
         sys.exit(0)
-    run_engine(args)
+
+    if args.stdin:
+        import litellm
+
+        litellm.drop_params = True
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                req = json.loads(line)
+            except json.JSONDecodeError:
+                print_raw(f'{{"type":"error","message":"invalid JSON"}}\n')
+                continue
+
+            req_args = argparse.Namespace(
+                provider=req.get("provider", args.provider),
+                model=req.get("model", args.model),
+                endpoint=req.get("endpoint", args.endpoint),
+                api_key=req.get("api_key", args.api_key),
+                prompt_file=req.get("prompt_file", args.prompt_file),
+                prompt_text=req.get("prompt_text", args.prompt_text),
+                file=req.get("file", args.file),
+                text=req.get("text", ""),
+                no_stream=req.get("no_stream", args.no_stream),
+                output_format=req.get("output_format", args.output_format),
+                get_provider=req.get("get_provider", False),
+                stdin=False,
+            )
+            if req_args.get_provider:
+                print_raw(json.dumps(build_provider_json(), ensure_ascii=False) + "\n")
+            else:
+                run_engine(req_args)
+    else:
+        run_engine(args)
 
 
 if __name__ == "__main__":
