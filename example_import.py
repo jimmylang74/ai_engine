@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example: importing ai-engine as a module, calling run_engine() multiple times."""
+"""Example: importing ai_engine as a module, calling run_engine() multiple times."""
 
 import sys
 import os
