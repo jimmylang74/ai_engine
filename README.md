@@ -75,6 +75,25 @@ python3 ai_engine.py --output-format raw --text "hello"
 python3 ai_engine.py --output-format events --text "hello"
 ```
 
+### Debugging / Verbose Logging
+
+```bash
+# Print detailed logs to stderr (messages sent to/received from LLM, stdin input, errors)
+python3 ai_engine.py --verbose --text "hello"
+
+# Redirect all verbose logs to a file
+python3 ai_engine.py --log /tmp/ai-engine.log --text "hello"
+
+# Combine with --stdin mode to trace all requests
+python3 ai_engine.py --stdin --output-format events --log /tmp/ai-engine.log
+```
+
+Verbose output includes:
+- `[SEND]` — model, API endpoint, and the full messages payload sent to the LLM
+- `[RECV]` — each chunk (thinking, assistant content, tool calls) received from the LLM
+- `[STDIN]` — each JSON request line read from stdin (in `--stdin` mode)
+- `[ERROR]` — exception messages and invalid JSON errors
+
 ### Provider Discovery
 
 ```bash
@@ -169,6 +188,8 @@ for i, text in enumerate(messages, 1):
         no_stream=True,
         output_format="raw",
         get_provider=False,
+        verbose=False,
+        log=None,
     )
 
     start = time.perf_counter()

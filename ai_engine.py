@@ -159,6 +159,39 @@ def print_raw(text: str, end: str = "") -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# Verbose Logger
+# ═══════════════════════════════════════════════════════════════════════
+
+_verbose_out: Any = None  # Optional[TextIO] — stderr or an open log file
+
+
+def _init_verbose(args: argparse.Namespace) -> None:
+    """Configure the verbose-log destination based on CLI args."""
+    global _verbose_out
+    if args.log:
+        _verbose_out = open(args.log, "a", encoding="utf-8")
+    elif args.verbose:
+        _verbose_out = sys.stderr
+    else:
+        _verbose_out = None
+
+
+def _close_verbose() -> None:
+    """Close the verbose-log file if it was opened (not stderr)."""
+    global _verbose_out
+    if _verbose_out is not None and _verbose_out is not sys.stderr:
+        _verbose_out.close()
+        _verbose_out = None
+
+
+def vlog(msg: str) -> None:
+    """Write a line to the verbose log (no-op unless --verbose/--log is set)."""
+    if _verbose_out is not None:
+        _verbose_out.write(msg + "\n")
+        _verbose_out.flush()
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Argument Parsing
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -252,6 +285,16 @@ Examples:
         help="Output style (default: %(default)s). "
         "'raw' — plain streaming text (backward compatible). "
         "'events' — NDJSON event stream (programmatic).",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print detailed logs: messages sent to/received from LLM, stdin input, errors, etc.",
+    )
+    parser.add_argument(
+        "--log",
+        default=None,
+        help="File path to write verbose logs (implies --verbose). All verbose output goes here instead of stderr.",
     )
     parser.add_argument(
         "--get-provider",
@@ -399,6 +442,7 @@ def handle_stream(
 
             if phase == "thinking":
                 thinking_parts.append(reasoning)
+                vlog(f"[RECV] thinking_delta: {reasoning}")
                 if is_events:
                     emit_event({"type": "thinking_delta", "delta": reasoning})
                 else:
@@ -424,12 +468,14 @@ def handle_stream(
                     name = getattr(func, "name", "") if func else ""
                     current_tool["name"] = name
                     phase = "tool_call"
+                    vlog(f"[RECV] tool_call_begin: id={tc_id} name={name}")
                     if is_events:
                         emit_event({"type": "tool_call_begin", "id": tc_id, "name": name})
 
                 tc_args = getattr(func, "arguments", "") if func else ""
                 if tc_args and current_tool:
                     current_tool["arguments"] += tc_args
+                    vlog(f"[RECV] tool_call_delta: id={current_tool['id']} delta={tc_args}")
                     if is_events:
                         emit_event({
                             "type": "tool_call_delta",
@@ -451,6 +497,7 @@ def handle_stream(
 
             if phase == "assistant":
                 assistant_parts.append(content)
+                vlog(f"[RECV] assistant_delta: {content}")
                 if is_events:
                     emit_event({"type": "assistant_delta", "delta": content})
                 else:
@@ -473,9 +520,11 @@ def handle_stream(
                 "id": current_tool["id"],
             })
 
+    finish_reason = finish_reason or "stop"
+    vlog(f"[RECV] finish_reason={finish_reason}")
     # ── Final events ──────────────────────────────────────────────────
     if is_events:
-        emit_event({"type": "done", "finish_reason": finish_reason or "stop"})
+        emit_event({"type": "done", "finish_reason": finish_reason})
     else:
         print_raw("\n")
 
@@ -525,6 +574,7 @@ def handle_non_stream(response: Any, is_events: bool) -> None:  # litellm ModelR
     # ── Thinking ──────────────────────────────────────────────────────
     reasoning = _get_reasoning(message)
     if reasoning:
+        vlog(f"[RECV] thinking: {reasoning}")
         if is_events:
             emit_event({"type": "thinking", "content": reasoning})
             emit_event({"type": "thinking_end"})
@@ -535,6 +585,7 @@ def handle_non_stream(response: Any, is_events: bool) -> None:  # litellm ModelR
         for tc in tool_calls:
             tc_id = tc.id
             func = tc.function
+            vlog(f"[RECV] tool_call: id={tc_id} name={func.name} arguments={func.arguments}")
             if is_events:
                 emit_event({"type": "tool_call_begin", "id": tc_id, "name": func.name})
                 try:
@@ -548,6 +599,7 @@ def handle_non_stream(response: Any, is_events: bool) -> None:  # litellm ModelR
     # ── Assistant content ─────────────────────────────────────────────
     content = getattr(message, "content", None) or ""
     if content:
+        vlog(f"[RECV] assistant: {content}")
         if is_events:
             emit_event({"type": "assistant", "content": content})
             emit_event({"type": "assistant_end"})
@@ -577,6 +629,11 @@ def run_engine(args: argparse.Namespace) -> None:
     stream = not args.no_stream
     is_events = args.output_format == "events"
 
+    # ── Verbose: log request ─────────────────────────────────────
+    vlog(f"[SEND] model={litellm_model}")
+    vlog(f"[SEND] api_base={args.endpoint}")
+    vlog(f"[SEND] messages={json.dumps(messages, ensure_ascii=False, indent=2)}")
+
     # LiteLLM global config
     litellm.drop_params = True  # silently drop unsupported params
 
@@ -589,10 +646,13 @@ def run_engine(args: argparse.Namespace) -> None:
     if args.api_key:
         kwargs["api_key"] = args.api_key
 
+    vlog(f"[SEND] kwargs={json.dumps({k: v for k, v in kwargs.items() if k != 'messages'}, ensure_ascii=False, indent=2)}")
+
     try:
         response = litellm.completion(**kwargs)
     except Exception as e:
         msg = str(e)
+        vlog(f"[ERROR] {msg}")
         if is_events:
             emit_event({"type": "done", "finish_reason": "error"})
             print_raw(f"\nError: {msg}\n")
@@ -600,6 +660,7 @@ def run_engine(args: argparse.Namespace) -> None:
             print_raw(f"\nError: {msg}\n")
         sys.exit(1)
 
+    vlog("[RECV] response received, starting output")
     if stream:
         handle_stream(response, is_events)
     else:
@@ -613,8 +674,10 @@ def run_engine(args: argparse.Namespace) -> None:
 
 def main() -> None:
     args = parse_args()
+    _init_verbose(args)
     if args.get_provider:
         print(json.dumps(build_provider_json(), indent=2, ensure_ascii=False))
+        _close_verbose()
         sys.exit(0)
 
     if args.stdin:
@@ -625,9 +688,11 @@ def main() -> None:
             line = line.strip()
             if not line:
                 continue
+            vlog(f"[STDIN] {line}")
             try:
                 req = json.loads(line)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                vlog(f"[ERROR] invalid JSON from stdin: {e}")
                 print_raw(f'{{"type":"error","message":"invalid JSON"}}\n')
                 continue
 
@@ -644,6 +709,8 @@ def main() -> None:
                 output_format=req.get("output_format", args.output_format),
                 get_provider=req.get("get_provider", False),
                 stdin=False,
+                verbose=args.verbose,
+                log=args.log,
             )
             if req_args.get_provider:
                 print_raw(json.dumps(build_provider_json(), ensure_ascii=False) + "\n")
@@ -651,6 +718,8 @@ def main() -> None:
                 run_engine(req_args)
     else:
         run_engine(args)
+
+    _close_verbose()
 
 
 if __name__ == "__main__":

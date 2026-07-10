@@ -27,7 +27,8 @@ Agent / App
 
 - **无状态**: `ai_engine.py` 不维护 LLM state（不管理 conversation history）。每次调用只发送单轮 messages，streaming 输出完成后即退出。
 - **单一输出通道**: 所有输出走 stdout。调用者通过 `--output-format` 切换 raw / events 格式。
-- **错误输出**: 诊断信息、警告走 stderr；调用者可以 `2>/dev/null` 屏蔽。
+- **诊断输出**: 诊断信息、警告默认走 stderr；通过 `--verbose` 可以输出详细的请求/响应日志，`--log <file>` 则重定向到文件。
+- **错误输出**: 错误信息打印到 stderr；调用者可以 `2>/dev/null` 屏蔽。
 
 ---
 
@@ -62,6 +63,13 @@ Agent / App
 |------|------|--------|------|
 | `--no-stream` | bool | `False` | 关闭 streaming，等完整响应再输出。 |
 | `--output-format` | str | `raw` | `raw` — 纯文本流（向后兼容）；`events` — NDJSON 事件流（程序化调用）。 |
+
+### 调试日志
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--verbose` | bool | `False` | 打印详细日志到 stderr：发送给 LLM 的消息、LLM 返回的消息、stdin 输入、错误信息等。 |
+| `--log` | str | — | 将所有 `--verbose` 信息写入指定文件（而非 stderr）。指定此参数相当于同时启用 `--verbose`。 |
 
 ### 其他
 
@@ -523,6 +531,8 @@ for i, text in enumerate(messages, 1):
         no_stream=True,
         output_format="raw",
         get_provider=False,
+        verbose=False,
+        log=None,
     )
 
     start = time.perf_counter()
@@ -644,7 +654,26 @@ python3 ai_engine.py \
     --text "test"
 ```
 
-### 13. 查询支持的 Provider（JSON 输出）
+### 13. 调试日志
+
+```bash
+# 查看发送给 LLM 的请求和返回的响应（输出到 stderr）
+python3 ai_engine.py --verbose --text "hello"
+
+# 将日志保存到文件（便于排查问题）
+python3 ai_engine.py --log /tmp/ai-engine.log --text "hello"
+
+# 在 --stdin 长驻模式下追踪每条请求
+python3 ai_engine.py --stdin --output-format events --log /tmp/ai-engine.log
+```
+
+Verbose 日志包含以下标记：
+- `[SEND]` — 发送给 LLM 的模型名、API 地址和完整 messages 负载
+- `[RECV]` — 从 LLM 收到的每个流式块（thinking、assistant 内容、tool_call）
+- `[STDIN]` — 从 stdin 读到的每行 JSON 请求（仅 `--stdin` 模式）
+- `[ERROR]` — 异常消息和 JSON 解析错误
+
+### 14. 查询支持的 Provider（JSON 输出）
 
 ```bash
 python3 ai_engine.py --get-provider

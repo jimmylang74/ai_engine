@@ -33,6 +33,8 @@ for i, text in enumerate(messages, 1):
         no_stream=True,
         output_format="raw",
         get_provider=False,
+        verbose=False,
+        log=None,
     )
 
     start = time.perf_counter()
