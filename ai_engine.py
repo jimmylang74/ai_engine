@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import sys
@@ -187,7 +188,8 @@ def _close_verbose() -> None:
 def vlog(msg: str) -> None:
     """Write a line to the verbose log (no-op unless --verbose/--log is set)."""
     if _verbose_out is not None:
-        _verbose_out.write(msg + "\n")
+        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        _verbose_out.write(f"[{ts}] {msg}\n")
         _verbose_out.flush()
 
 
