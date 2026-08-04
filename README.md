@@ -51,7 +51,7 @@ python3 ai_engine.py --system-prompt-file prompt.txt --user-prompt "user message
 python3 ai_engine.py --system-prompt "You are a helpful assistant" --user-prompt "hello"
 ```
 
-If neither `--system-prompt-file` nor `--system-prompt` is given, the engine falls back to `prompt-fine.txt` in the script directory (if it exists).
+If neither `--system-prompt-file` nor `--system-prompt` is given, the engine falls back to `prompt-fine.txt` in the script directory (if it exists). The system prompt is sent to the LLM as a dedicated `role: "system"` message; the user content follows as a `role: "user"` message.
 
 ### Input: User Content
 

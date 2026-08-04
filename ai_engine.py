@@ -358,9 +358,14 @@ Examples:
 
 
 def build_messages(args: argparse.Namespace) -> list[dict[str, str]]:
-    """Assemble the messages list from prompt + content args."""
+    """Assemble the messages list from system prompt + user content args.
 
-    # Prompt
+    The system prompt (--system-prompt / --system-prompt-file) is sent as a
+    dedicated ``role: "system"`` message; the user content (--user-prompt /
+    --user-prompt-file) as a ``role: "user"`` message.
+    """
+
+    # System prompt
     prompt = ""
     if args.system_prompt:
         prompt = args.system_prompt
@@ -371,7 +376,7 @@ def build_messages(args: argparse.Namespace) -> list[dict[str, str]]:
             print(f"Prompt file not found: {e}", file=sys.stderr)
             sys.exit(1)
 
-    # Content (the actual request / data)
+    # User content (the actual request / data)
     content = ""
     if args.user_prompt:
         content = args.user_prompt
@@ -382,15 +387,11 @@ def build_messages(args: argparse.Namespace) -> list[dict[str, str]]:
             print(f"Content file not found: {e}", file=sys.stderr)
             sys.exit(1)
 
-    # Build message
-    if prompt and content:
-        return [{"role": "user", "content": prompt + "\n\n" + content}]
-    elif prompt:
-        return [{"role": "user", "content": prompt}]
-    elif content:
-        return [{"role": "user", "content": content}]
-    else:
-        return [{"role": "user", "content": "Hello!"}]
+    messages: list[dict[str, str]] = []
+    if prompt:
+        messages.append({"role": "system", "content": prompt})
+    messages.append({"role": "user", "content": content or "Hello!"})
+    return messages
 
 
 # ═══════════════════════════════════════════════════════════════════════
