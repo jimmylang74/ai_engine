@@ -247,6 +247,24 @@ Examples:
         "LiteLLM also respects standard env vars like OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.",
     )
 
+    # ── Sampling Parameters (optional) ────────────────────────────────
+    sampling_group = parser.add_argument_group("Sampling Parameters (optional)")
+    sampling_group.add_argument(
+        "--temperature",
+        type=float,
+        default=0.2,
+        help="Sampling temperature (default: %(default)s). "
+        "Only applied when the provider supports it; unsupported params are silently dropped.",
+    )
+    sampling_group.add_argument(
+        "--top-p",
+        dest="top_p",
+        type=float,
+        default=0.9,
+        help="Nucleus sampling top_p (default: %(default)s). "
+        "Only applied when the provider supports it; unsupported params are silently dropped.",
+    )
+
     # ── Prompt Input ─────────────────────────────────────────────────
     prompt_group = parser.add_argument_group("Prompt Input (system prompt)")
     prompt_group.add_argument(
@@ -632,7 +650,12 @@ def run_engine(args: argparse.Namespace) -> None:
     is_events = args.output_format == "events"
 
     # ── Verbose: log request ─────────────────────────────────────
-    vlog(f"[SEND] model={litellm_model}")
+    # Optional sampling params — getattr() keeps backward compat with
+    # callers that build a Namespace without these fields (defaults apply).
+    temperature = getattr(args, "temperature", 0.2)
+    top_p = getattr(args, "top_p", 0.9)
+
+    vlog(f"[SEND] model={litellm_model} temperature={temperature} top_p={top_p}")
     vlog(f"[SEND] api_base={args.endpoint}")
     vlog(f"[SEND] messages={json.dumps(messages, ensure_ascii=False, indent=2)}")
 
@@ -647,6 +670,9 @@ def run_engine(args: argparse.Namespace) -> None:
     }
     if args.api_key:
         kwargs["api_key"] = args.api_key
+
+    kwargs["temperature"] = temperature
+    kwargs["top_p"] = top_p
 
     vlog(f"[SEND] kwargs={json.dumps({k: v for k, v in kwargs.items() if k != 'messages'}, ensure_ascii=False, indent=2)}")
 
@@ -703,6 +729,8 @@ def main() -> None:
                 model=req.get("model", args.model),
                 endpoint=req.get("endpoint", args.endpoint),
                 api_key=req.get("api_key", args.api_key),
+                temperature=req.get("temperature", getattr(args, "temperature", 0.2)),
+                top_p=req.get("top_p", getattr(args, "top_p", 0.9)),
                 prompt_file=req.get("prompt_file", args.prompt_file),
                 prompt_text=req.get("prompt_text", args.prompt_text),
                 file=req.get("file", args.file),
