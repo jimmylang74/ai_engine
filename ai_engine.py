@@ -7,8 +7,8 @@ structured events (thinking, tool_call, assistant, usage, done) as NDJSON
 or raw streaming text.
 
 Usage:
-    python3 ai_engine.py --prompt-file prompt.txt -f data.mermaid
-    python3 ai_engine.py --prompt-text "You are an expert" --text "analyze this"
+    python3 ai_engine.py --system-prompt-file prompt.txt --user-prompt-file data.mermaid
+    python3 ai_engine.py --system-prompt "You are an expert" --user-prompt "analyze this"
     python3 ai_engine.py --provider openai --model gpt-4o --endpoint https://api.openai.com/v1
     python3 ai_engine.py --output-format events --no-stream
 """
@@ -213,8 +213,8 @@ Environment variables:
   LLM_API_KEY       Override --api-key
 
 Examples:
-  python3 ai_engine.py --prompt-file prompt.txt -f data.mermaid
-  python3 ai_engine.py --prompt-text "You are an expert" --text "analyze this"
+  python3 ai_engine.py --system-prompt-file prompt.txt --user-prompt-file data.mermaid
+  python3 ai_engine.py --system-prompt "You are an expert" --user-prompt "analyze this"
   python3 ai_engine.py --provider openai --model gpt-4o --endpoint https://api.openai.com/v1
   python3 ai_engine.py --output-format events --no-stream
         """,
@@ -268,28 +268,27 @@ Examples:
     # ── Prompt Input ─────────────────────────────────────────────────
     prompt_group = parser.add_argument_group("Prompt Input (system prompt)")
     prompt_group.add_argument(
-        "--prompt-file",
+        "--system-prompt-file",
         default=None,
-        help="Path to prompt file (default: prompt-fine.txt in script dir)",
+        help="Path to system prompt file (default: prompt-fine.txt in script dir)",
     )
     prompt_group.add_argument(
-        "--prompt-text",
+        "--system-prompt",
         default=None,
-        help="Inline prompt text (alternative to --prompt-file)",
+        help="Inline system prompt text (alternative to --system-prompt-file)",
     )
 
     # ── Content Input (user message) ──────────────────────────────────
     content_group = parser.add_argument_group("Content Input (user message)")
     content_group.add_argument(
-        "-f",
-        "--file",
+        "--user-prompt-file",
         default=None,
         help="Path to request-content file (replaces --mermaid from v1)",
     )
     content_group.add_argument(
-        "--text",
+        "--user-prompt",
         default=None,
-        help="Inline request-content text (alternative to -f/--file)",
+        help="Inline request-content text (alternative to --user-prompt-file)",
     )
 
     # ── Output ────────────────────────────────────────────────────────
@@ -341,14 +340,14 @@ Examples:
         args.api_key = os.environ["LLM_API_KEY"]
 
     # Fill defaults for optional paths
-    if args.prompt_file is None and args.prompt_text is None:
+    if args.system_prompt_file is None and args.system_prompt is None:
         default_prompt = os.path.join(SCRIPT_DIR, "prompt-fine.txt")
         if os.path.isfile(default_prompt):
-            args.prompt_file = default_prompt
-    if args.file is None and args.text is None:
+            args.system_prompt_file = default_prompt
+    if args.user_prompt_file is None and args.user_prompt is None:
         default_content = os.path.join(SCRIPT_DIR, "saved.mermaid")
         if os.path.isfile(default_content):
-            args.file = default_content
+            args.user_prompt_file = default_content
 
     return args
 
@@ -363,22 +362,22 @@ def build_messages(args: argparse.Namespace) -> list[dict[str, str]]:
 
     # Prompt
     prompt = ""
-    if args.prompt_text:
-        prompt = args.prompt_text
-    elif args.prompt_file:
+    if args.system_prompt:
+        prompt = args.system_prompt
+    elif args.system_prompt_file:
         try:
-            prompt = read_file(args.prompt_file)
+            prompt = read_file(args.system_prompt_file)
         except FileNotFoundError as e:
             print(f"Prompt file not found: {e}", file=sys.stderr)
             sys.exit(1)
 
     # Content (the actual request / data)
     content = ""
-    if args.text:
-        content = args.text
-    elif args.file:
+    if args.user_prompt:
+        content = args.user_prompt
+    elif args.user_prompt_file:
         try:
-            content = read_file(args.file)
+            content = read_file(args.user_prompt_file)
         except FileNotFoundError as e:
             print(f"Content file not found: {e}", file=sys.stderr)
             sys.exit(1)
@@ -731,10 +730,10 @@ def main() -> None:
                 api_key=req.get("api_key", args.api_key),
                 temperature=req.get("temperature", getattr(args, "temperature", 0.2)),
                 top_p=req.get("top_p", getattr(args, "top_p", 0.9)),
-                prompt_file=req.get("prompt_file", args.prompt_file),
-                prompt_text=req.get("prompt_text", args.prompt_text),
-                file=req.get("file", args.file),
-                text=req.get("text", ""),
+                system_prompt_file=req.get("system_prompt_file", args.system_prompt_file),
+                system_prompt=req.get("system_prompt", args.system_prompt),
+                user_prompt_file=req.get("user_prompt_file", args.user_prompt_file),
+                user_prompt=req.get("user_prompt", ""),
                 no_stream=req.get("no_stream", args.no_stream),
                 output_format=req.get("output_format", args.output_format),
                 get_provider=req.get("get_provider", False),

@@ -47,15 +47,15 @@ Agent / App
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `--prompt-file` | str | `prompt-fine.txt` | Prompt 文件路径。与 `--prompt-text` 二选一。 |
-| `--prompt-text` | str | — | 内联 Prompt 文本。与 `--prompt-file` 二选一。 |
+| `--system-prompt-file` | str | `prompt-fine.txt` | System prompt 文件路径。与 `--system-prompt` 二选一。 |
+| `--system-prompt` | str | — | 内联 system prompt 文本。与 `--system-prompt-file` 二选一。 |
 
 ### Content 输入（user message）
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `-f` / `--file` | str | `saved.mermaid` | 请求内容文件路径（替代 v1 的 `--mermaid`）。与 `--text` 二选一。 |
-| `--text` | str | — | 内联请求内容文本。与 `-f` / `--file` 二选一。 |
+| `--user-prompt-file` | str | `saved.mermaid` | 请求内容文件路径（替代 v1 的 `--mermaid`）。与 `--user-prompt` 二选一。 |
+| `--user-prompt` | str | — | 内联请求内容文本。与 `--user-prompt-file` 二选一。 |
 
 ### 输出控制
 
@@ -424,13 +424,13 @@ python3 ai_engine.py
 ### 2. 指定文件
 
 ```bash
-python3 ai_engine.py --prompt-file my-prompt.txt -f my-data.txt
+python3 ai_engine.py --system-prompt-file my-prompt.txt --user-prompt-file my-data.txt
 ```
 
 ### 3. 内联输入
 
 ```bash
-python3 ai_engine.py --prompt-text "你是一名网络专家" --text "分析这段日志..."
+python3 ai_engine.py --system-prompt "你是一名网络专家" --user-prompt "分析这段日志..."
 ```
 
 ### 4. 切换 provider
@@ -441,8 +441,8 @@ python3 ai_engine.py \
     --model gpt-4o \
     --endpoint https://api.openai.com/v1 \
     --api-key sk-xxx \
-    --prompt-text "Translate to French" \
-    --text "Hello world"
+    --system-prompt "Translate to French" \
+    --user-prompt "Hello world"
 ```
 
 ```bash
@@ -451,7 +451,7 @@ python3 ai_engine.py \
     --model claude-sonnet-4-20250514 \
     --endpoint https://api.anthropic.com \
     --api-key sk-ant-xxx \
-    --text "Summarize this article"
+    --user-prompt "Summarize this article"
 ```
 
 ### 5. 非 Streaming + Events 输出（程序化调用）
@@ -460,8 +460,8 @@ python3 ai_engine.py \
 python3 ai_engine.py \
     --no-stream \
     --output-format events \
-    --prompt-text "You are a helpful assistant" \
-    --text "What is 2+2?"
+    --system-prompt "You are a helpful assistant" \
+    --user-prompt "What is 2+2?"
 ```
 
 期望输出（一次响应，所有事件在一个批次中输出）：
@@ -478,7 +478,7 @@ python3 ai_engine.py \
 ```bash
 python3 ai_engine.py \
     --output-format events \
-    --text "Explain quantum computing" \
+    --user-prompt "Explain quantum computing" \
     --provider ollama_native \
     --model qwen3.5:27b
 ```
@@ -524,10 +524,10 @@ for i, text in enumerate(messages, 1):
         model="qwen3.5:27b",
         endpoint="http://192.168.10.39:11434",
         api_key=None,
-        prompt_file=None,
-        prompt_text=None,
-        file=None,
-        text=text,
+        system_prompt_file=None,
+        system_prompt=None,
+        user_prompt_file=None,
+        user_prompt=text,
         no_stream=True,
         output_format="raw",
         get_provider=False,
@@ -557,8 +557,8 @@ proc = subprocess.Popen(
         sys.executable, "ai_engine.py",
         "--output-format", "events",
         "--no-stream",
-        "--prompt-text", "You are a poet",
-        "--text", "Write a haiku about Python",
+        "--system-prompt", "You are a poet",
+        "--user-prompt", "Write a haiku about Python",
     ],
     stdout=subprocess.PIPE,
     text=True,
@@ -582,7 +582,7 @@ print(f"Final result: {final_content}")
 启动常驻子进程，通过 stdin 逐行接收 JSON 请求，避免每次调用重新加载 LiteLLM：
 
 ```bash
-echo '{"text":"hello","no_stream":true,"output_format":"events"}' \
+echo '{"user_prompt":"hello","no_stream":true,"output_format":"events"}' \
   | python3 ai_engine.py --stdin --output-format events
 ```
 
@@ -598,7 +598,7 @@ proc = subprocess.Popen(
     stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1,
 )
 
-request = {"text": "hello", "no_stream": True, "output_format": "events"}
+request = {"user_prompt": "hello", "no_stream": True, "output_format": "events"}
 proc.stdin.write(json.dumps(request) + "\n")
 proc.stdin.flush()
 
@@ -615,7 +615,7 @@ for line in proc.stdout:
 
 ```bash
 python3 ai_engine.py --output-format events --no-stream \
-    --text "hello" | while read -r line; do
+    --user-prompt "hello" | while read -r line; do
     type=$(echo "$line" | python3 -c "import sys,json; print(json.load(sys.stdin)['type'])")
     case "$type" in
         assistant_delta)
@@ -635,12 +635,12 @@ done
 export LLM_ENDPOINT=https://api.openai.com/v1
 export LLM_MODEL=gpt-4o
 export LLM_API_KEY=sk-xxx
-python3 ai_engine.py --text "hello"
+python3 ai_engine.py --user-prompt "hello"
 ```
 
 ```bash
 # 混合：参数优先级高于环境变量
-LLM_ENDPOINT=http://localhost:11434 python3 ai_engine.py --model llama3.2 --text "hi"
+LLM_ENDPOINT=http://localhost:11434 python3 ai_engine.py --model llama3.2 --user-prompt "hi"
 ```
 
 ### 12. 自定义 OpenAI 兼容 API
@@ -651,17 +651,17 @@ python3 ai_engine.py \
     --endpoint https://my-proxy.example.com/v1 \
     --api-key sk-my-key \
     --model my-custom-model \
-    --text "test"
+    --user-prompt "test"
 ```
 
 ### 13. 调试日志
 
 ```bash
 # 查看发送给 LLM 的请求和返回的响应（输出到 stderr）
-python3 ai_engine.py --verbose --text "hello"
+python3 ai_engine.py --verbose --user-prompt "hello"
 
 # 将日志保存到文件（便于排查问题）
-python3 ai_engine.py --log /tmp/ai-engine.log --text "hello"
+python3 ai_engine.py --log /tmp/ai-engine.log --user-prompt "hello"
 
 # 在 --stdin 长驻模式下追踪每条请求
 python3 ai_engine.py --stdin --output-format events --log /tmp/ai-engine.log
@@ -717,9 +717,9 @@ default_endpoint=$(echo "$providers" | python3 -c "import sys,json; print(json.l
 |------|------------------------------|---------------------|
 | LLM 适配 | 硬编码 Ollama HTTP API | LiteLLM 适配任意 provider |
 | `--endpoint` | 默认 `http://192.168.10.39:11434/api/chat` | 默认 `http://192.168.10.39:11434`（不含路径） |
-| `-f` 参数 | `--mermaid` 读取 Mermaid 文件 | `--file` 读取任意请求内容文件 |
-| `--text` | 不支持 | 新增，内联请求内容 |
-| `-p` / `--prompt` | 单个参数 | 拆分为 `--prompt-file` + `--prompt-text` |
+| `-f` 参数 | `--mermaid` 读取 Mermaid 文件 | `--user-prompt-file` 读取任意请求内容文件 |
+| `--user-prompt` | 不支持 | 新增，内联请求内容 |
+| `-p` / `--prompt` | 单个参数 | 拆分为 `--system-prompt-file` + `--system-prompt` |
 | 输出格式 | 固定 raw 文本 + THINKING 动画 | `raw`（默认）或 `events`（NDJSON 事件流） |
 | 返回路径 | HTTP Streaming 直接输出 | LiteLLM Streaming / Non-streaming 统一输出 |
 | Smart 状态 | ✓ 保留流式拼接 | ✓ 保留，另外增加 events 格式 |

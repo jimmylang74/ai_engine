@@ -8,13 +8,13 @@ Stateless CLI middleware that unifies LLM providers via [LiteLLM](https://github
 pip install -r requirements.txt
 
 # Streaming raw text (default)
-python3 ai_engine.py --prompt-text "You are an expert" --text "analyze this"
+python3 ai_engine.py --system-prompt "You are an expert" --user-prompt "analyze this"
 
 # NDJSON event stream (programmatic consumption)
-python3 ai_engine.py --output-format events --text "hello"
+python3 ai_engine.py --output-format events --user-prompt "hello"
 
 # Non-streaming (wait for full response)
-python3 ai_engine.py --no-stream --text "summarize this"
+python3 ai_engine.py --no-stream --user-prompt "summarize this"
 ```
 
 ## Supported Providers
@@ -47,18 +47,18 @@ python3 ai_engine.py --provider ollama_native --model qwen3.5:27b
 ### Input: System Prompt
 
 ```bash
-python3 ai_engine.py --prompt-file prompt.txt --text "user message"
-python3 ai_engine.py --prompt-text "You are a helpful assistant" --text "hello"
+python3 ai_engine.py --system-prompt-file prompt.txt --user-prompt "user message"
+python3 ai_engine.py --system-prompt "You are a helpful assistant" --user-prompt "hello"
 ```
 
-If neither `--prompt-file` nor `--prompt-text` is given, the engine falls back to `prompt-fine.txt` in the script directory (if it exists).
+If neither `--system-prompt-file` nor `--system-prompt` is given, the engine falls back to `prompt-fine.txt` in the script directory (if it exists).
 
 ### Input: User Content
 
 ```bash
-python3 ai_engine.py -f data.mermaid          # read content from file
-python3 ai_engine.py --text "inline text"      # inline content
-python3 ai_engine.py                           # falls back to saved.mermaid (if it exists)
+python3 ai_engine.py --user-prompt-file data.mermaid  # read content from file
+python3 ai_engine.py --user-prompt "inline text"      # inline content
+python3 ai_engine.py                                  # falls back to saved.mermaid (if it exists)
 ```
 
 ### Output Formats
@@ -66,23 +66,23 @@ python3 ai_engine.py                           # falls back to saved.mermaid (if
 **Raw** (default) — plain streaming text, backward compatible:
 
 ```bash
-python3 ai_engine.py --output-format raw --text "hello"
+python3 ai_engine.py --output-format raw --user-prompt "hello"
 ```
 
 **Events** — NDJSON event stream, one JSON object per line:
 
 ```bash
-python3 ai_engine.py --output-format events --text "hello"
+python3 ai_engine.py --output-format events --user-prompt "hello"
 ```
 
 ### Debugging / Verbose Logging
 
 ```bash
 # Print detailed logs to stderr (messages sent to/received from LLM, stdin input, errors)
-python3 ai_engine.py --verbose --text "hello"
+python3 ai_engine.py --verbose --user-prompt "hello"
 
 # Redirect all verbose logs to a file
-python3 ai_engine.py --log /tmp/ai-engine.log --text "hello"
+python3 ai_engine.py --log /tmp/ai-engine.log --user-prompt "hello"
 
 # Combine with --stdin mode to trace all requests
 python3 ai_engine.py --stdin --output-format events --log /tmp/ai-engine.log
@@ -118,7 +118,7 @@ python3 ai_engine.py --get-provider | jq .
 ### Non-Streaming
 
 ```bash
-python3 ai_engine.py --no-stream --text "hello"
+python3 ai_engine.py --no-stream --user-prompt "hello"
 ```
 
 ### Query Providers (JSON)
@@ -181,10 +181,10 @@ for i, text in enumerate(messages, 1):
         model="qwen3.5:27b",
         endpoint="http://192.168.10.39:11434",
         api_key=None,
-        prompt_file=None,
-        prompt_text=None,
-        file=None,
-        text=text,
+        system_prompt_file=None,
+        system_prompt=None,
+        user_prompt_file=None,
+        user_prompt=text,
         no_stream=True,
         output_format="raw",
         get_provider=False,
@@ -211,7 +211,7 @@ Start a persistent `ai_engine.py` process that reads JSON requests from stdin, a
 python3 ai_engine.py --stdin --output-format events
 
 # Send requests via stdin (one JSON per line)
-echo '{"text":"hello","no_stream":true,"output_format":"events"}' | python3 ai_engine.py --stdin --output-format events
+echo '{"user_prompt":"hello","no_stream":true,"output_format":"events"}' | python3 ai_engine.py --stdin --output-format events
 ```
 
 Client example:
@@ -226,7 +226,7 @@ proc = subprocess.Popen(
     stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1,
 )
 
-request = {"text": "hello", "no_stream": True, "output_format": "events"}
+request = {"user_prompt": "hello", "no_stream": True, "output_format": "events"}
 proc.stdin.write(json.dumps(request) + "\n")
 proc.stdin.flush()
 
@@ -243,19 +243,19 @@ Full example: [example_subprocess.py](example_subprocess.py)
 
 ```bash
 # Analyze a Mermaid diagram with a local Ollama model
-python3 ai_engine.py --prompt-file prompt.txt -f diagram.mermaid
+python3 ai_engine.py --system-prompt-file prompt.txt --user-prompt-file diagram.mermaid
 
 # Use OpenAI with NDJSON events, piped to jq
 python3 ai_engine.py \
   --provider openai --model gpt-4o \
   --output-format events --no-stream \
-  --text "explain this code" | jq .
+  --user-prompt "explain this code" | jq .
 
 # Set credentials via environment
 export LLM_API_KEY=sk-...
 export LLM_PROVIDER=openai
 export LLM_MODEL=gpt-4o
-python3 ai_engine.py --text "hello"
+python3 ai_engine.py --user-prompt "hello"
 ```
 
 ## Requirements

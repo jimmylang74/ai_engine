@@ -27,15 +27,15 @@ class AIEngineClient:
         )
 
     def ask(self, text: str, *, model: str = "qwen3.5:27b",
-            prompt_text: str | None = None) -> dict:
+            system_prompt: str | None = None) -> dict:
         request = {
-            "text": text,
+            "user_prompt": text,
             "model": model,
             "no_stream": True,
             "output_format": "events",
         }
-        if prompt_text:
-            request["prompt_text"] = prompt_text
+        if system_prompt:
+            request["system_prompt"] = system_prompt
 
         self.proc.stdin.write(json.dumps(request) + "\n")
         self.proc.stdin.flush()
